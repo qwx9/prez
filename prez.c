@@ -530,12 +530,12 @@ hitpal(Mouse m)
 			ink = col;
 			drawpal();
 			break;
-		case 2:
+		case 4:
 			back = col;
 			drawpal();
 			update(nil);
 			break;
-		case 4:
+		case 2:
 			snprint(buf, sizeof(buf), "%06x", c64[i]);
 			if(eenter("Hex", buf, sizeof(buf), &m) == 6){
 				c = strtoll(buf, &e, 16);

@@ -599,7 +599,7 @@ pipeline(char *fmt, ...)
 void
 usage(void)
 {
-	fprint(2, "usage: %s [ file ]\n", argv0);
+	fprint(2, "usage: %s [-b] [file]\n", argv0);
 	exits("usage");
 }
 
@@ -609,12 +609,14 @@ main(int argc, char *argv[])
 	char *s, buf[1024];
 	Rectangle r;
 	Image *img;
-	int i, fd;
+	int i, invbg, fd;
 	Event e;
 	Mouse m;
 	Point p, d;
 
+	invbg = 0;
 	ARGBEGIN {
+	case 'b': invbg = 1; break;
 	default:
 		usage();
 	} ARGEND;
@@ -642,8 +644,13 @@ main(int argc, char *argv[])
 		if(pal[i] == nil)
 			sysfatal("allocimage: %r");
 	}
-	ink = pal[0];
-	back = pal[1];
+	if(invbg){
+		ink = pal[1];
+		back = pal[0];
+	}else{
+		ink = pal[0];
+		back = pal[1];
+	}
 	drawpal();
 	center();
 

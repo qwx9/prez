@@ -12,7 +12,6 @@ Point cpos;		/* position on canvas */
 Image *canvas;
 Image *ink;
 Image *back;
-Image *pal[16];		/* palette */
 Rectangle palr;		/* palette rect on screen */
 Rectangle penr;		/* pen size rect on screen */
 
@@ -25,22 +24,17 @@ Image *undo[1024];
 
 int c64[] = {		/* c64 color palette */
 	0x000000,
-	0xFFFFFF,
-	0x68372B,
-	0x70A4B2,
-	0x6F3D86,
-	0x588D43,
-	0x352879,
-	0xB8C76F,
-	0x6F4F25,
-	0x433900,
-	0x9A6759,
-	0x444444,
-	0x6C6C6C,
-	0x9AD284,
-	0x6C5EB5,
-	0x959595,
+	0xFFFFFF, 0xC0C0C0, 0x7F7F7F,
+	0xFF0000, 0xC00000, 0x7F0000,
+	0xFF7F00, 0xC06000, 0x7F3F00,
+	0xFFFF00, 0xC0C000, 0x7F7F00,
+	0x00FF00, 0x00C000, 0x007F00,
+	0x00FFFF, 0x00C0C0, 0x007F7F,
+	0x0000FF, 0x0000C0, 0x00007F,
+	0x7F00FF, 0x6000C0, 0x3F007F,
+	0xFF00FF, 0xC000C0, 0x7F007F,
 };
+Image *pal[nelem(c64)];		/* palette */
 
 /*
  * get bounding rectnagle for stroke from r.min to r.max with

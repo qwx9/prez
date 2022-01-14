@@ -1,0 +1,14 @@
+void	initpal(int);
+void	drawpal(void);
+void	initcnv(char*);
+Point	s2c(Point);
+Point	c2s(Point);
+Rectangle	c2sr(Rectangle);
+void	save(Rectangle, int);
+void	restore(int);
+void	initcmd(void);
+void	update(Rectangle*);
+Rectangle	strokerect(Rectangle, int);
+void	strokedraw(Image*, Rectangle, Image*, int);
+void	gendrawdiff(Image*, Rectangle, Rectangle, Image*, Point, Image*, Point, int);
+void	expand(Rectangle);

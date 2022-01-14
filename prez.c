@@ -3,44 +3,16 @@
 #include <draw.h>
 #include <event.h>
 #include <keyboard.h>
+#include "dat.h"
+#include "fns.h"
 
-char *filename;
 int zoom = 1;
-int brush = 1;
-Point spos;		/* position on screen */
-Point cpos;		/* position on canvas */
-Image *canvas;
-Image *ink;
-Image *back;
-Rectangle palr;		/* palette rect on screen */
-Rectangle penr;		/* pen size rect on screen */
-
-enum {
-	NBRUSH = 10+1,
-};
-
-int nundo = 0;
-Image *undo[1024];
-
-int c64[] = {		/* c64 color palette */
-	0x000000,
-	0xFFFFFF, 0xC0C0C0, 0x7F7F7F,
-	0xFF0000, 0xC00000, 0x7F0000,
-	0xFF7F00, 0xC06000, 0x7F3F00,
-	0xFFFF00, 0xC0C000, 0x7F7F00,
-	0x00FF00, 0x00C000, 0x007F00,
-	0x00FFFF, 0x00C0C0, 0x007F7F,
-	0x0000FF, 0x0000C0, 0x00007F,
-	0x7F00FF, 0x6000C0, 0x3F007F,
-	0xFF00FF, 0xC000C0, 0x7F007F,
-};
-Image *pal[nelem(c64)];		/* palette */
 
 /*
- * get bounding rectnagle for stroke from r.min to r.max with
+ * get bounding rectangle for stroke from r.min to r.max with
  * specified brush (size).
  */
-static Rectangle
+Rectangle
 strokerect(Rectangle r, int brush)
 {
 	r = canonrect(r);
@@ -51,7 +23,7 @@ strokerect(Rectangle r, int brush)
  * draw stroke from r.min to r.max to dst with color ink and
  * brush (size).
  */
-static void
+void
 strokedraw(Image *dst, Rectangle r, Image *ink, int brush)
 {
 	if(!eqpt(r.min, r.max))
@@ -63,7 +35,7 @@ strokedraw(Image *dst, Rectangle r, Image *ink, int brush)
  * A draw operation that touches only the area contained in bot but not in top.
  * mp and sp get aligned with bot.min.
  */
-static void
+void
 gendrawdiff(Image *dst, Rectangle bot, Rectangle top, 
 	Image *src, Point sp, Image *mask, Point mp, int op)
 {
@@ -184,24 +156,6 @@ zoomdraw(Image *d, Rectangle r, Rectangle top, Image *b, Image *s, Point sp, int
 	freeimage(t);
 }
 
-Point
-s2c(Point p){
-	p = subpt(p, spos);
-	if(p.x < 0) p.x -= zoom-1;
-	if(p.y < 0) p.y -= zoom-1;
-	return addpt(divpt(p, zoom), cpos);
-}
-
-Point
-c2s(Point p){
-	return addpt(mulpt(subpt(p, cpos), zoom), spos);
-}
-
-Rectangle
-c2sr(Rectangle r){
-	return Rpt(c2s(r.min), c2s(r.max));
-}
-
 void
 update(Rectangle *rp){
 	if(canvas==nil)
@@ -237,57 +191,6 @@ expand(Rectangle r)
 	gendrawdiff(tmp, tmp->r, canvas->r, back, ZP, nil, ZP, SoverD);
 	freeimage(canvas);
 	canvas = tmp;
-}
-
-void
-save(Rectangle r, int mark)
-{
-	Image *tmp;
-	int x;
-
-	if(mark){
-		x = nundo++ % nelem(undo);
-		if(undo[x])
-			freeimage(undo[x]);
-		undo[x] = nil;
-	}
-	if(canvas==nil || nundo<0)
-		return;
-	if(!rectclip(&r, canvas->r))
-		return;
-	if((tmp = allocimage(display, r, canvas->chan, 0, DNofill)) == nil)
-		return;
-	draw(tmp, r, canvas, nil, r.min);
-	x = nundo++ % nelem(undo);
-	if(undo[x])
-		freeimage(undo[x]);
-	undo[x] = tmp;
-}
-
-void
-restore(int n)
-{
-	Image *tmp;
-	int x;
-
-	while(nundo > 0){
-		if(n-- == 0)
-			return;
-		x = --nundo % nelem(undo);
-		if((tmp = undo[x]) == nil)
-			return;
-		undo[x] = nil;
-		if(canvas == nil || canvas->chan != tmp->chan){
-			freeimage(canvas);
-			canvas = tmp;
-			update(nil);
-		} else {
-			expand(tmp->r);
-			draw(canvas, tmp->r, tmp, nil, tmp->r.min);
-			update(&tmp->r);
-			freeimage(tmp);
-		}
-	}
 }
 
 typedef struct {
@@ -456,201 +359,47 @@ center(void)
 	update(nil);
 }
 
-void
-drawpal(void)
-{
-	Rectangle r, rr;
-	int i;
-
-	r = screen->r;
-	r.min.y = r.max.y - 20;
-	replclipr(screen, 0, r);
-
-	penr = r;
-	penr.min.x = r.max.x - NBRUSH*Dy(r);
-
-	palr = r;
-	palr.max.x = penr.min.x;
-
-	r = penr;
-	draw(screen, r, back, nil, ZP);
-	for(i=0; i<NBRUSH; i++){
-		r.max.x = penr.min.x + (i+1)*Dx(penr) / NBRUSH;
-		rr = r;
-		if(i == brush)
-			rr.min.y += Dy(r)/3;
-		if(i == NBRUSH-1){
-			/* last is special brush for fill draw */
-			draw(screen, rr, ink, nil, ZP);
-		} else {
-			rr.min = addpt(rr.min, divpt(subpt(rr.max, rr.min), 2));
-			rr.max = rr.min;
-			strokedraw(screen, rr, ink, i);
-		}
-		r.min.x = r.max.x;
-	}
-
-	r = palr;
-	for(i=1; i<=nelem(pal); i++){
-		r.max.x = palr.min.x + i*Dx(palr) / nelem(pal);
-		rr = r;
-		if(ink == pal[i-1])
-			rr.min.y += Dy(r)/3;
-		draw(screen, rr, pal[i-1], nil, ZP);
-		gendrawdiff(screen, r, rr, back, ZP, nil, ZP, SoverD);
-		r.min.x = r.max.x;
-	}
-
-	r = screen->r;
-	r.max.y -= Dy(palr);
-	replclipr(screen, 0, r);
-}
-
-int
-hitpal(Mouse m)
-{
-	int i;
-	u32int c;
-	char buf[16], *e;
-
-	if(ptinrect(m.xy, penr)){
-		if(m.buttons & 7){
-			brush = ((m.xy.x - penr.min.x) * NBRUSH) / Dx(penr);
-			drawpal();
-		}
-		return 1;
-	}
-	if(ptinrect(m.xy, palr)){
-		Image *col;
-
-		i = (m.xy.x - palr.min.x) * nelem(pal) / Dx(palr);
-		col = pal[i];
-		switch(m.buttons & 7){
-		case 1:
-			ink = col;
-			drawpal();
-			break;
-		case 2:
-			back = col;
-			drawpal();
-			update(nil);
-			break;
-		case 4:
-			snprint(buf, sizeof(buf), "%06x", c64[i]);
-			if(eenter("Hex", buf, sizeof(buf), &m) == 6){
-				c = strtoll(buf, &e, 16);
-				if(*e == 0){
-					c64[i] = c;
-					freeimage(pal[i]);
-					pal[i] = allocimage(display, Rect(0, 0, 1, 1), RGB24, 1, c<<8|0xff);
-					drawpal();
-				}
-			}
-			break;
-		}
-		return 1;
-	}
-	return 0;
-}
-
-void
-catch(void *, char *msg)
-{
-	if(strstr(msg, "closed pipe"))
-		noted(NCONT);
-	noted(NDFLT);
-}
-
-int
-pipeline(char *fmt, ...)
-{
-	char buf[1024];
-	va_list a;
-	int p[2];
-
-	va_start(a, fmt);
-	vsnprint(buf, sizeof(buf), fmt, a);
-	va_end(a);
-	if(pipe(p) < 0)
-		return -1;
-	switch(rfork(RFPROC|RFMEM|RFFDG|RFNOTEG|RFREND)){
-	case -1:
-		close(p[0]);
-		close(p[1]);
-		return -1;
-	case 0:
-		close(p[1]);
-		dup(p[0], 0);
-		dup(p[0], 1);
-		close(p[0]);
-		execl("/bin/rc", "rc", "-c", buf, nil);
-		exits("exec");
-	}
-	close(p[0]);
-	return p[1];
-}
-
-void
+static void
 usage(void)
 {
 	fprint(2, "usage: %s [-b] [file]\n", argv0);
 	exits("usage");
 }
 
+/* FIXME */
+int	pipeline(char*,...);	// cmd.c
+int	hitpal(Mouse);
+
 void
 main(int argc, char *argv[])
 {
-	char *s, buf[1024];
+	char *filename, *s, buf[1024];
 	Rectangle r;
 	Image *img;
-	int i, invbg, fd;
+	int invbg, fd;
 	Event e;
 	Mouse m;
 	Point p, d;
 
+	filename = nil;
 	invbg = 0;
 	ARGBEGIN {
 	case 'b': invbg = 1; break;
 	default:
 		usage();
 	} ARGEND;
-
 	if(argc == 1)
 		filename = strdup(argv[0]);
 	else if(argc != 0)
 		usage();	
-
 	if(initdraw(0, 0, "paint") < 0)
 		sysfatal("initdraw: %r");
-
-	if(filename){
-		if((fd = open(filename, OREAD)) < 0)
-			sysfatal("open: %r");
-		if((canvas = readimage(display, fd, 0)) == nil)
-			sysfatal("readimage: %r");
-		close(fd);
-	}
-
-	/* palette initialization */
-	for(i=0; i<nelem(pal); i++){
-		pal[i] = allocimage(display, Rect(0, 0, 1, 1), RGB24, 1,
-			c64[i % nelem(c64)]<<8 | 0xFF);
-		if(pal[i] == nil)
-			sysfatal("allocimage: %r");
-	}
-	if(invbg){
-		ink = pal[1];
-		back = pal[0];
-	}else{
-		ink = pal[0];
-		back = pal[1];
-	}
+	initcnv(filename);
+	initpal(invbg);
 	drawpal();
 	center();
-
 	einit(Emouse | Ekeyboard);
-
-	notify(catch);
+	initcmd();
 	for(;;) {
 		switch(event(&e)){
 		case Emouse:

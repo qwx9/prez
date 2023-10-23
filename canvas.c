@@ -6,6 +6,7 @@
 
 Image *back;
 Image *canvas;
+Image *canvas2;
 Point spos;		/* position on screen */
 Point cpos;		/* position on canvas */
 
@@ -37,24 +38,41 @@ c2sr(Rectangle r)
 }
 
 void
-save(Rectangle r, int mark)
+save(Rectangle r, int flip)
 {
 	Image *tmp;
 	int x;
 
-	if(mark){
-		x = nundo++ % nelem(undo);
-		if(undo[x])
-			freeimage(undo[x]);
-		undo[x] = nil;
-	}
 	if(canvas==nil || nundo<0)
 		return;
 	if(!rectclip(&r, canvas->r))
 		return;
+	if(flip){
+		draw(canvas2, r, canvas, nil, ZP);
+		return;
+	}
 	if((tmp = allocimage(display, r, canvas->chan, 0, DNofill)) == nil)
 		return;
 	draw(tmp, r, canvas, nil, r.min);
+	x = nundo++ % nelem(undo);
+	if(undo[x])
+		freeimage(undo[x]);
+	undo[x] = tmp;
+}
+
+void
+shrinksaved(Rectangle r)
+{
+	Image *tmp;
+	int x;
+
+	if(canvas==nil || canvas2==nil)
+		return;
+	if(!rectclip(&r, canvas2->r))
+		return;
+	if((tmp = allocimage(display, r, canvas->chan, 0, DNofill)) == nil)
+		return;
+	draw(tmp, r, canvas2, nil, r.min);
 	x = nundo++ % nelem(undo);
 	if(undo[x])
 		freeimage(undo[x]);
@@ -87,16 +105,48 @@ restore(int n)
 	}
 }
 
+// FIXME: don't change canvas size once set
 void
-initcnv(char *file)
+expand(Rectangle r)
+{
+	Rectangle nr;
+	Image *tmp;
+
+	if(canvas==nil){
+		if((canvas = allocimage(display, r, screen->chan, 0, DNofill)) == nil
+		|| (canvas2 = allocimage(display, r, screen->chan, 0, DNofill)) == nil)
+			sysfatal("allocimage: %r");
+		draw(canvas, canvas->r, back, nil, ZP);
+		return;
+	}
+	nr = canvas->r;
+	combinerect(&nr, r);
+	if(eqrect(nr, canvas->r))
+		return;
+	if((tmp = allocimage(display, nr, canvas->chan, 0, DNofill)) == nil)
+		return;
+	draw(tmp, canvas->r, canvas, nil, canvas->r.min);
+	gendrawdiff(tmp, tmp->r, canvas->r, back, ZP, nil, ZP, SoverD);
+	freeimage(canvas);
+	canvas = tmp;
+}
+
+void
+initcnv(Point sz, char *file)
 {
 	int fd;
+	Rectangle r;
 
-	if(file == nil)
+	if(file != nil){
+		if((fd = open(file, OREAD)) < 0)
+			sysfatal("open: %r");
+		if((canvas = readimage(display, fd, 0)) == nil)
+			sysfatal("readimage: %r");
+		close(fd);
 		return;
-	if((fd = open(file, OREAD)) < 0)
-		sysfatal("open: %r");
-	if((canvas = readimage(display, fd, 0)) == nil)
-		sysfatal("readimage: %r");
-	close(fd);
+	}else if(!eqpt(sz, ZP))
+		r = Rpt(ZP, sz);
+	else
+		r = rectsubpt(screen->r, screen->r.min);
+	expand(r);
 }

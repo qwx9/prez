@@ -7,6 +7,7 @@
 #include "fns.h"
 
 int zoom = 1;
+int mode = Modenormal;
 
 /*
  * get bounding rectangle for stroke from r.min to r.max with
@@ -17,6 +18,12 @@ strokerect(Rectangle r, int brush)
 {
 	r = canonrect(r);
 	return Rect(r.min.x-brush, r.min.y-brush, r.max.x+brush+1, r.max.y+brush+1);
+}
+
+Rectangle
+textrect(Point p, char *s)
+{
+	return Rpt(p, addpt(p, Pt(strlen(s) * font->width, font->height)));
 }
 
 /*
@@ -167,30 +174,6 @@ update(Rectangle *rp){
 		zoomdraw(screen, c2sr(*rp), ZR, back, canvas, rp->min, zoom);
 	}
 	flushimage(display, 1);
-}
-
-void
-expand(Rectangle r)
-{
-	Rectangle nr;
-	Image *tmp;
-
-	if(canvas==nil){
-		if((canvas = allocimage(display, r, screen->chan, 0, DNofill)) == nil)
-			sysfatal("allocimage: %r");
-		draw(canvas, canvas->r, back, nil, ZP);
-		return;
-	}
-	nr = canvas->r;
-	combinerect(&nr, r);
-	if(eqrect(nr, canvas->r))
-		return;
-	if((tmp = allocimage(display, nr, canvas->chan, 0, DNofill)) == nil)
-		return;
-	draw(tmp, canvas->r, canvas, nil, canvas->r.min);
-	gendrawdiff(tmp, tmp->r, canvas->r, back, ZP, nil, ZP, SoverD);
-	freeimage(canvas);
-	canvas = tmp;
 }
 
 typedef struct {
@@ -362,7 +345,7 @@ center(void)
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-b] [file]\n", argv0);
+	fprint(2, "usage: %s [-b] [-s width height] [file]\n", argv0);
 	exits("usage");
 }
 
@@ -374,17 +357,26 @@ void
 main(int argc, char *argv[])
 {
 	char *filename, *s, buf[1024];
-	Rectangle r;
+	Rectangle r, rr;
 	Image *img;
 	int invbg, fd;
 	Event e;
 	Mouse m;
-	Point p, d;
+	Point p, d, sz;
 
 	filename = nil;
 	invbg = 0;
+	sz = ZP;
 	ARGBEGIN {
-	case 'b': invbg = 1; break;
+	case 'b':
+		invbg = 1;
+		break;
+	case 's':
+		sz.x = strtol(EARGF(usage()), nil, 0);
+		sz.y = strtol(EARGF(usage()), nil, 0);
+		if(sz.x < 2 || sz.y < 2)
+			usage();
+		break;
 	default:
 		usage();
 	} ARGEND;
@@ -394,7 +386,7 @@ main(int argc, char *argv[])
 		usage();	
 	if(initdraw(0, 0, "paint") < 0)
 		sysfatal("initdraw: %r");
-	initcnv(filename);
+	initcnv(sz, filename);
 	initpal(invbg);
 	drawpal();
 	center();
@@ -422,7 +414,7 @@ main(int argc, char *argv[])
 						break;
 					}
 					r = canvas->r;
-					save(r, 1);
+					save(r, 0);
 					floodfill(canvas, r, p, img);
 					update(&r);
 
@@ -431,11 +423,24 @@ main(int argc, char *argv[])
 						;
 					break;
 				}
+				// FIXME: clean up
 				r = strokerect(Rpt(p, p), brush);
 				expand(r);
-				save(r, 1);
-				strokedraw(canvas, Rpt(p, p), img, brush);
-				update(&r);
+				rr = r;
+				d = p;
+				save(canvas->r, 1);
+				if(mode == Modenormal){
+					strokedraw(canvas, Rpt(p, p), img, brush);
+					update(&r);
+				}else if(mode == Modetext){
+					if(eenter(nil, buf, sizeof(buf), &e.mouse) <= 0)
+						break;
+					string(canvas, p, img, ZP, font, buf);
+					r = textrect(p, buf);
+					update(&r);
+					shrinksaved(r);
+					break;
+				}
 				for(;;){
 					m = e.mouse;
 					if(event(&e) != Emouse)
@@ -447,11 +452,35 @@ main(int argc, char *argv[])
 						continue;
 					r = strokerect(Rpt(p, d), brush);
 					expand(r);
-					save(r, 0);
-					strokedraw(canvas, Rpt(p, d), img, brush);
-					update(&r);
-					p = d;
+					if(mode == Modenormal){
+						strokedraw(canvas, Rpt(p, d), img, brush);
+						update(&r);
+						combinerect(&rr, r);
+						p = d;
+					}
 				}
+				switch(mode){
+				case Modelines:
+					rr = r;
+					r = Rpt(p, d);
+					if(Dx(r) == 0 || Dy(r) == 0)
+						break;
+					strokedraw(canvas, r, img, brush);
+					update(&rr);
+					break;
+				case Moderects:
+					rr = r;
+					r = Rpt(p, d);
+					if(Dx(r) == 0 || Dy(r) == 0)
+						break;
+					strokedraw(canvas, Rpt(r.min, Pt(r.max.x, r.min.y)), img, brush);
+					strokedraw(canvas, Rpt(r.min, Pt(r.min.x, r.max.y)), img, brush);
+					strokedraw(canvas, Rpt(Pt(r.min.x, r.max.y), r.max), img, brush);
+					strokedraw(canvas, Rpt(Pt(r.max.x, r.min.y), r.max), img, brush);
+					update(&rr);
+					break;
+				}
+				shrinksaved(canonrect(rr));
 				break;
 			case 4:
 				for(;;){
@@ -467,9 +496,19 @@ main(int argc, char *argv[])
 			break;
 		case Ekeyboard:
 			switch(e.kbdc){
+			case 'L':
+				mode = mode == Modelines ? Modenormal : Modelines;
+				break;
+			case 'R':
+				mode = mode == Moderects ? Modenormal : Moderects;
+				break;
+			case 'T':
+				mode = mode == Modetext ? Modenormal : Modetext;
+				break;
 			case Kesc:
 				zoom = 1;
 				center();
+				mode = Modenormal;
 				break;
 			case '+':
 				if(zoom < 0x1000)
@@ -482,13 +521,13 @@ main(int argc, char *argv[])
 			case 'c':
 				if(canvas == nil)
 					break;
-				save(canvas->r, 1);
+				save(canvas->r, 0);
 				freeimage(canvas);
 				canvas = nil;
 				update(nil);
 				break;
 			case 'u':
-				restore(16);
+				restore(1);
 				break;
 			case 'f':
 				brush = NBRUSH-1;
@@ -536,7 +575,7 @@ main(int argc, char *argv[])
 						goto Error;
 					}
 					if(canvas){
-						save(canvas->r, 1);
+						save(canvas->r, 0);
 						freeimage(canvas);
 					}
 					canvas = img;

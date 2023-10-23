@@ -1,10 +1,11 @@
 void	initpal(int);
 void	drawpal(void);
-void	initcnv(char*);
+void	initcnv(Point, char*);
 Point	s2c(Point);
 Point	c2s(Point);
 Rectangle	c2sr(Rectangle);
 void	save(Rectangle, int);
+void	shrinksaved(Rectangle);
 void	restore(int);
 void	initcmd(void);
 void	update(Rectangle*);

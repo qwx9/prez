@@ -1,6 +1,12 @@
 enum{
 	NBRUSH = 10+1,
+
+	Modenormal = 0,
+	Modelines,
+	Moderects,
+	Modetext,
 };
+extern int mode;
 
 extern Image *ink;
 
